@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace WhisperWrapperCSharp;
 
-public class RunCommand
+public class CommandRunner
 {
     public static void RunProgram(string command)
     {
