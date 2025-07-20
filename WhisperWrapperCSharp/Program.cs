@@ -1,7 +1,4 @@
-﻿using System;
-using System.IO;
-using System.Runtime.CompilerServices;
-using WhisperWrapperCSharp;
+﻿using WhisperWrapperCSharp;
 
 /// <summary>
 /// This is a program that creates subtitle files for video files using whisper.cpp
@@ -15,29 +12,15 @@ internal class Program
         var projectRoot = Path.GetFullPath(Path.Combine(exeLocation, "..\\..\\..\\"));
         var ffmpegWindows = Path.Combine(projectRoot, "runtimes", "windows", "ffmpeg", "ffmpeg.exe");
         var whisperWindows = Path.Combine(projectRoot, "runtimes", "windows", "whisper", "whisper.cpp", "build", "bin", "release", "whisper-cli.exe");
-        var whisperModelWindows = Path.Combine(projectRoot, "runtimes", "windows", "whisper", "whisper.cpp", "models", "ggml-base.en.bin");
+        var whisperModelWindows = Path.Combine(projectRoot, "runtimes", "windows", "whisper", "whisper.cpp", "models", "ggml-large-v2.bin");
 
         // Empty list for video files
         List<string> filepaths = new List<string>();
         List<string> filepathsSuccess = new List<string>();
         List<string> filepathsFail = new List<string>();
-        List<string> tempFolders = new List<string>();
-
-        // Fires when the program is exiting normally or being killed
-        AppDomain.CurrentDomain.ProcessExit += (s, e) =>
-        {
-            Console.WriteLine("Process is exiting. Cleaning up...");
-            RunCleanupCommand(tempFolders);
-        };
-
-        Console.CancelKeyPress += (s, e) =>
-        {
-            Console.WriteLine("Program interrupted (Ctrl+C or close). Running cleanup...");
-            RunCleanupCommand(tempFolders);
-
-            // Prevent immediate termination
-            e.Cancel = true;
-        };
+        
+        // Defines emtpy wav command variable
+        string commandWav;
 
         // Filepath prompt
         Console.Write("Filepath here >> ");
@@ -88,62 +71,58 @@ internal class Program
         {
             foreach (var file in SafeEnumerateFiles(filepath))
             {
-                filepaths.Add(file); // Adds file to the filepaths list
+                filepaths.Add(file); // Adds the file to the filepaths list
             }
         }
-        else if (File.Exists(filepath)) { // Adds file to filepaths list
-            filepaths.Add(filepath);
+        else if (File.Exists(filepath)) { 
+            filepaths.Add(filepath); // Adds file to filepaths list
         }
 
         try
         {
             foreach (var file in filepaths)
             {
-                
-                while (true)
-                {
-                    // Create a temporary folder        
-                    var tempFolder = Path.Combine(Path.GetTempPath(), "whisper_wrapper_csharp_temp_" + Guid.NewGuid());
-                    Directory.CreateDirectory(tempFolder);
+                // Create a temporary folder        
+                var tempFolder = Path.Combine(Path.GetTempPath(), "whisper_wrapper_csharp_temp_" + Guid.NewGuid());
+                Directory.CreateDirectory(tempFolder);
 
-                    // Add temporary folder location to tempFolders list
-                    tempFolders.Add(tempFolder);
+                // File extension
+                var ext = Path.GetExtension(file).TrimStart('.');
 
-                    // File extension
-                    var ext = Path.GetExtension(file).TrimStart('.');
+                // Filepath without extension
+                var filepathWithoutExt = Path.Combine(Path.GetDirectoryName(file) ?? string.Empty, Path.GetFileNameWithoutExtension(file));
 
-                    // Filepath without extension
-                    var filepathWithoutExt = Path.Combine(Path.GetDirectoryName(file) ?? string.Empty, Path.GetFileNameWithoutExtension(file));
+                // Temporary files
+                var tempInput = Path.Combine(tempFolder + "\\input." + ext);
+                var tempOutput = Path.Combine(tempFolder + "\\output");
+                var tempOutputSrt = Path.Combine(tempFolder + "\\output.srt");
 
-                    // Temporary files
-                    var tempInput = tempFolder + "\\input." + ext;
-                    var tempOutput = tempFolder + "\\output";
-                    var tempOutputSrt = tempFolder + "\\output.srt";
+                // Copy to the temporary folder as an input file
+                File.Copy(file, tempInput);
 
-                    // Copy to the temporary folder as an input file
-                    File.Copy(file, tempInput);
+                // Run the FFMPEG "ToWAV" command
+                commandWav = ConvertCommand.ToWAV(tempInput, tempOutput);
+                Console.WriteLine(commandWav);
+                RunTerminalCommand(ffmpegWindows, commandWav);
 
-                    // Run the FFMPEG "ToWAV" command
-                    var commandWAV = ConvertCommand.ToWAV(tempInput, tempOutput + ".wav");
-                    RunTerminalCommand(ffmpegWindows, commandWAV);
+                // Run the whisper command
+                var commandSrt = ConvertCommand.ToSrt(whisperModelWindows, tempOutput);
+                Console.WriteLine(commandSrt);
+                RunTerminalCommand(whisperWindows, commandSrt);
 
-                    // Run the whisper command
-                    var commandSRT = ConvertCommand.ToSrt(whisperModelWindows, tempOutput + ".wav", tempOutput);
-                    RunTerminalCommand(whisperWindows, commandSRT);
+                // Move subtitles back to the original directory
+                File.Move(tempOutputSrt, filepathWithoutExt + ".srt");
+                Directory.Delete(tempFolder, true);
 
-                    // Move subtitles back to original directory
-                    File.Move(tempOutputSrt, filepathWithoutExt + ".srt");
-
-                    // Add filepath to success list
-                    filepathsSuccess.Add(file);
-                }
+                // Add filepath to the success list
+                filepathsSuccess.Add(file);
             }
 
             // Completion message 
             Console.WriteLine($"Subtitles were created for: ");
-            foreach (var file in filepathsSuccess) // List successfully created subtitles
+            foreach (var file in filepathsSuccess) 
             {
-                Console.WriteLine(file);
+                Console.WriteLine(file); // List successfully created subtitles
             }
             if (filepathsFail.Count > 0)
             {
@@ -163,9 +142,6 @@ internal class Program
             Console.WriteLine("Error: " + ex);
         }
 
-        // Clean up at the end. Remove temporary folders.
-        RunCleanupCommand(tempFolders);
-
         // Keeps window open
         Console.WriteLine("Press any button to close window...");
         Console.ReadLine();
@@ -179,14 +155,5 @@ internal class Program
     public static void RunTerminalCommand(string tool, string command) 
     {
         CommandRunner.RunProgram(tool + command);
-    }
-
-    public static void RunCleanupCommand(List<string> tempFolders)
-    {
-        // Delete all temporary folders
-        foreach (string folder in tempFolders)
-        {
-            Directory.Delete(folder, true);
-        }
     }
 }

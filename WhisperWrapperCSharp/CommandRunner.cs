@@ -2,7 +2,9 @@
 using System.Runtime.InteropServices;
 
 namespace WhisperWrapperCSharp;
-
+/// <summary>
+/// This class is specifically for running commands.
+/// </summary>
 public class CommandRunner
 {
     public static void RunProgram(string command)
